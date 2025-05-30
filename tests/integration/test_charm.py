@@ -25,7 +25,7 @@ async def test_build_and_deploy(ops_test: OpsTest):
     # Build and deploy charm from local source folder
     charm = await ops_test.build_charm(".")
     resources = {
-        "some-container-image": METADATA["resources"]["some-container-image"]["upstream-source"]
+        "seaweedfs-image": METADATA["resources"]["seaweedfs-image"]["upstream-source"]
     }
 
     # Deploy the charm and wait for active/idle status

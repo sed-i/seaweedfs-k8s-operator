@@ -5,13 +5,13 @@
 
 from ops import testing
 
-from charm import SeaweedfsK8SOperatorCharm
+from charm import SeaweedfsK8S
 
 
 def test_pebble_ready():
     # Arrange:
-    ctx = testing.Context(SeaweedfsK8SOperatorCharm)
-    container = testing.Container("some-container", can_connect=True)
+    ctx = testing.Context(SeaweedfsK8S)
+    container = testing.Container("seaweedfs", can_connect=True)
     state_in = testing.State(containers={container})
 
     # Act:

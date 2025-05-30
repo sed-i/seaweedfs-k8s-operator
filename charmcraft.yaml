@@ -14,20 +14,50 @@ assumes:
 # (Recommended)
 title: SeaweedFS
 
+links:
+  website: https://github.com/canonical/seaweedfs-k8s-operator
+  source: https://github.com/canonical/seaweedfs-k8s-operator
+  issues: https://github.com/canonical/seaweedfs-k8s-operator/issues
 
 # (Required)
-summary: A very short one-line summary of the charm.
+summary: A stand-in for s3-integrator + (micro)ceph for testing purposes.
 
 
 # (Required)
 description: |
-  A single sentence that says what the charm is, concisely and memorably.
+  ## Purpose
+  This charm is intended to use as a stand-in for s3-integrator + (micro)ceph for testing purposes.
+  When testing charms, instead of deploying (micro)ceph, s3-integrator, setting config options and
+  running the sync-credentials action, this charm mimics the s3 relation interface and provides an
+  s3 endpoint.
 
-  A paragraph of one to three short sentences, that describe what the charm does.
+  ## Compared to s3-integrator
+  ### Relation data
+  This charm does not use the s3 library. Instead, it renderes the relation data itself.
+  For a related charm, relation data may look like this:
 
-  A third paragraph that explains what need the charm meets.
+  ```yaml
+    - relation-id: 7
+      endpoint: s3
+      related-endpoint: s3-credentials
+      application-data:
+        access-key: placeholder
+        bucket: s3-credentials-7
+        endpoint: http://swfs-0.swfs-endpoints.welcome-k8s.svc.cluster.local:8333
+        secret-key: placeholder
+  ```
 
-  Finally, a paragraph that describes whom the charm is useful for.
+  Note that the bucket name is automatically derived from the relation id. No config options needed.
+
+  ### Bucket name
+  In the past there has been some confusion about who decides on the bucket name - the requesting charm
+  (e.g. mimir, loki, tempo), or the s3-integrator charm. It seems like everyone agrees now that it's the
+  s3-integrator where the bucket name should be set (via config option).
+
+  In this charm, the same principle holds, but there is no config option for bucket name, because:
+  1. For testing purposes, we don't care that the bucket name is not fixed.
+  2. This way we could relate multiple charms to the same seaweedfs charm, unlike s3-integrator where each
+     app (mimir, loki, tempo) have their own s3-integrator due to different bucket names.
 
 
 # (Required for 'charm' type)
@@ -53,7 +83,12 @@ parts:
 # General configuration documentation: https://juju.is/docs/sdk/config
 config:
   options:
-
+    bucket:
+      type: string
+      default: "default-bucket"
+      description: |
+        This config option does nothing, because currently the bucket name
+        is prescribed by the relation id.
 
 
 # The containers and resources metadata apply to Kubernetes charms only.
@@ -64,15 +99,28 @@ containers:
   seaweedfs:
     resource: seaweedfs-image
 
+    mounts:
+      - storage: data
+        location: /data
+
+storage:
+  data:
+    type: filesystem
+    description: >
+      Storage dir for seaweedfs data, such as s3.
 
 # This field populates the Resources tab on Charmhub.
 resources:
   # An OCI image resource for each container listed above.
   # You may remove this if your charm will run without a workload sidecar container.
-  sseaweedfs-image-image:
+  seaweedfs-image:
     type: oci-image
-    description: OCI image for the 'some-container' container
+    description: OCI image for the 'seaweedfs' container
     # The upstream-source field is ignored by Juju. It is included here as a reference
     # so the integration testing suite knows which image to deploy during testing. This field
     # is also used by the 'canonical/charming-actions' Github action for automated releasing.
     upstream-source: chrislusf/seaweedfs:3.88
+
+provides:
+  s3-credentials:
+    interface: s3

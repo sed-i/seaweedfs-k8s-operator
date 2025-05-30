@@ -4,7 +4,7 @@ version = "0.0"
 requires-python = "~=3.8"
 
 dependencies = [
-  "ops~= 2.17",
+  "ops",
 ]
 
 [project.optional-dependencies]
@@ -13,8 +13,10 @@ dev = [
   "ruff",
   "codespell",
   "pytest",
+  "pytest-operator",
   "coverage[toml]",
   "ops[testing]",
+  "pyright",
 ]
 
 [tool.coverage.run]
