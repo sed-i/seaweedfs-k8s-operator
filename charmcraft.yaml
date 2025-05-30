@@ -2,15 +2,17 @@
 # See https://juju.is/docs/sdk/charmcraft-config for guidance.
 
 # (Required)
-name: seaweedfs-k8s-operator
+name: seaweedfs-k8s
 
 
 # (Required)
 type: charm
-
+assumes:
+  - k8s-api
+  - juju >= 3.6
 
 # (Recommended)
-title: Charm Template
+title: SeaweedFS
 
 
 # (Required)
@@ -29,13 +31,19 @@ description: |
 
 
 # (Required for 'charm' type)
-bases:
-  - build-on:
-    - name: ubuntu
-      channel: "22.04"
-    run-on:
-    - name: ubuntu
-      channel: "22.04"
+platforms:
+  ubuntu@24.04:amd64:
+
+
+parts:
+  charm:
+    source: .
+    plugin: uv
+    build-packages: [git]
+    build-snaps: [astral-uv]
+    override-build: |
+      craftctl default
+      git describe --always > $CRAFT_PART_INSTALL/version
 
 
 # (Optional) Configuration options for the charm
@@ -45,14 +53,7 @@ bases:
 # General configuration documentation: https://juju.is/docs/sdk/config
 config:
   options:
-    # An example config option to customise the log level of the workload
-    log-level:
-      description: |
-        Configures the log level of gunicorn.
 
-        Acceptable values are: "info", "debug", "warning", "error" and "critical"
-      default: "info"
-      type: string
 
 
 # The containers and resources metadata apply to Kubernetes charms only.
@@ -60,18 +61,18 @@ config:
 
 # Your workload’s containers.
 containers:
-  some-container:
-    resource: some-container-image
+  seaweedfs:
+    resource: seaweedfs-image
 
 
 # This field populates the Resources tab on Charmhub.
 resources:
   # An OCI image resource for each container listed above.
   # You may remove this if your charm will run without a workload sidecar container.
-  some-container-image:
+  sseaweedfs-image-image:
     type: oci-image
     description: OCI image for the 'some-container' container
     # The upstream-source field is ignored by Juju. It is included here as a reference
     # so the integration testing suite knows which image to deploy during testing. This field
     # is also used by the 'canonical/charming-actions' Github action for automated releasing.
-    upstream-source: some-repo/some-image:some-tag
+    upstream-source: chrislusf/seaweedfs:3.88
