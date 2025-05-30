@@ -64,6 +64,15 @@ containers:
   seaweedfs:
     resource: seaweedfs-image
 
+    mounts:
+      - storage: data
+        location: /data
+
+storage:
+  data:
+    type: filesystem
+    description: >
+      Storage dir for seaweedfs data, such as s3.
 
 # This field populates the Resources tab on Charmhub.
 resources:
