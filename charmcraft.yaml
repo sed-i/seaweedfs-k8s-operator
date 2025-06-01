@@ -15,9 +15,9 @@ assumes:
 title: SeaweedFS
 
 links:
-  website: https://github.com/canonical/seaweedfs-k8s-operator
-  source: https://github.com/canonical/seaweedfs-k8s-operator
-  issues: https://github.com/canonical/seaweedfs-k8s-operator/issues
+  website: https://github.com/sed-i/seaweedfs-k8s-operator
+  source: https://github.com/sed-i/seaweedfs-k8s-operator
+  issues: https://github.com/sed-i/seaweedfs-k8s-operator/issues
 
 # (Required)
 summary: A stand-in for s3-integrator + (micro)ceph for testing purposes.
