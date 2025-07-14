@@ -124,3 +124,8 @@ resources:
 provides:
   s3-credentials:
     interface: s3
+
+requires:
+  certificates:
+    interface: tls-certificates
+    limit: 1
