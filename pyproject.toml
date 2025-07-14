@@ -1,10 +1,12 @@
 [project]
-name = "alertmanager-k8s"
+name = "seaweedfs-k8s"
 version = "0.0"
-requires-python = "~=3.8"
+requires-python = "~=3.10"
 
 dependencies = [
   "ops",
+  "cryptography==45.0.3",
+  "pydantic==2.11.5",
 ]
 
 [project.optional-dependencies]
