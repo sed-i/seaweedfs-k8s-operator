@@ -1,3 +1,5 @@
+"""Config builder for seaweedfs."""
+
 import textwrap
 
 
@@ -8,6 +10,7 @@ class Config:
     """
 
     def build(self) -> str:
+        """Create a json string of the config."""
         return textwrap.dedent("""
             {
               "identities": [
