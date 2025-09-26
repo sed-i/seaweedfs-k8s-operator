@@ -115,21 +115,30 @@ relations:
 
 ## Manual testing
 ```bash
+juju ssh --container seaweedfs swfs/0 /charm/bin/pebble logs -f | grep -iE "error|fail"
+
+# Make sure size is growing
+juju ssh --container seaweedfs swfs/0 du -hc /data
+```
+
+```bash
 # Refs:
 # https://github.com/seaweedfs/seaweedfs/blob/master/docker/compose/local-filer-backup-compose.yml
 # https://github.com/seaweedfs/seaweedfs/blob/master/.github/workflows/s3tests.yml
 
-curl --fail -I http://localhost:9333/cluster/healthz
+UNIT=$(juju status --format=yaml | yq '.applications.swfs.units.swfs/0.address')
+
+curl --fail -I http://$UNIT:9333/cluster/healthz
 
 # Master server
-curl -s http://localhost:9333/cluster/status
+curl -s http://$UNIT:9333/cluster/status
 
 # Volume server
-curl -s http://localhost:8080/status
+curl -s http://$UNIT:8080/status
 
 # Filer
-curl -s http://localhost:8888/
+curl -s http://$UNIT:8888/
 
 # S3 server
-curl -s http://localhost:8000/
+curl -s http://$UNIT:8333/
 ```

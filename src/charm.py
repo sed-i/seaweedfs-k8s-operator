@@ -91,7 +91,11 @@ class SeaweedfsK8S(ops.CharmBase):
                     self.container_name: {
                         "override": "replace",
                         "summary": "seaweedfs-k8s service",
-                        "command": f"/usr/bin/weed server -filer -filer.maxMB=64 -dir={self._storage_path} -s3 -s3.config={self._config_path} -ip.bind=0.0.0.0 -master.electionTimeout 1s -master.volumeSizeLimitMB=1024 -volume.max=0",
+                        "command": (
+                            "/usr/bin/weed server -filer -filer.maxMB=64 "
+                            f"-dir={self._storage_path} -s3 -s3.config={self._config_path} -ip.bind=0.0.0.0 "
+                            "-master.electionTimeout 1s -master.volumeSizeLimitMB=1024 -volume.max=0"
+                        ),
                         "startup": "enabled",
                         "environment": {
                             "_config_hash": sentinel,  # Restarts the service via pebble replan
