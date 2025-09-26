@@ -4,6 +4,7 @@
 
 """Charm the application."""
 
+import hashlib
 import http.client
 import logging
 import os
@@ -12,7 +13,14 @@ import socket
 import ops
 from ops.pebble import Layer
 
+from config import Config
+
 logger = logging.getLogger(__name__)
+
+
+def hook() -> str:
+    """Return Juju hook name."""
+    return os.environ["JUJU_HOOK_NAME"]
 
 
 class SeaweedfsK8S(ops.CharmBase):
@@ -20,6 +28,7 @@ class SeaweedfsK8S(ops.CharmBase):
 
     container_name = "seaweedfs"
     _storage_path = "/data"
+    _config_path = "/config/s3.json"
 
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
@@ -30,8 +39,15 @@ class SeaweedfsK8S(ops.CharmBase):
         if not container.can_connect():
             return
 
+        if hook() in ["install", "remove", "stop"]:
+            return
+
+        config = Config().build()
+        config_hash = hashlib.sha512(config.encode()).hexdigest()
+
+        container.push(f"{self._config_path}", config, make_dirs=True)
         container.add_layer(
-            self.container_name, self._pebble_layer(""), combine=True
+            self.container_name, self._pebble_layer(config_hash), combine=True
         )
         container.replan()
 
@@ -75,13 +91,21 @@ class SeaweedfsK8S(ops.CharmBase):
                     self.container_name: {
                         "override": "replace",
                         "summary": "seaweedfs-k8s service",
-                        "command": f"/usr/bin/weed server -dir={self._storage_path} -s3",
+                        "command": (
+                            "/usr/bin/weed server -filer -filer.maxMB=64 "
+                            f"-dir={self._storage_path} -s3 -s3.config={self._config_path} -ip.bind=0.0.0.0 "
+                            "-master.electionTimeout 1s -master.volumeSizeLimitMB=1024 -volume.max=0"
+                        ),
                         "startup": "enabled",
                         "environment": {
                             "_config_hash": sentinel,  # Restarts the service via pebble replan
                             "https_proxy": os.environ.get("JUJU_CHARM_HTTPS_PROXY", ""),
                             "http_proxy": os.environ.get("JUJU_CHARM_HTTP_PROXY", ""),
                             "no_proxy": os.environ.get("JUJU_CHARM_NO_PROXY", ""),
+                            "WEED_MASTER_VOLUME_GROWTH_COPY_OTHER": "1",
+                            "WEED_MASTER_VOLUME_GROWTH_COPY_1": "1",
+                            "WEED_MASTER_VOLUME_GROWTH_COPY_2": "1",
+                            "WEED_MASTER_VOLUME_GROWTH_COPY_3": "1",
                         },
                     },
                 },
