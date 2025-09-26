@@ -8,10 +8,12 @@ import hashlib
 import http.client
 import logging
 import os
+import re
 import socket
+from typing import Optional
 
 import ops
-from ops.pebble import Layer
+from ops.pebble import APIError, Layer
 
 from config import Config
 
@@ -35,6 +37,7 @@ class SeaweedfsK8S(ops.CharmBase):
         self.reconcile()
 
     def reconcile(self):
+        """Recreate the world."""
         container = self.unit.get_container(self.container_name)
         if not container.can_connect():
             return
@@ -95,8 +98,12 @@ class SeaweedfsK8S(ops.CharmBase):
                         "summary": "seaweedfs-k8s service",
                         "command": (
                             "/usr/bin/weed server -filer -filer.maxMB=64 "
-                            f"-dir={self._storage_path} -s3 -s3.config={self._config_path} -ip.bind=0.0.0.0 "
-                            "-master.electionTimeout 1s -master.volumeSizeLimitMB=1024 -volume.max=0"
+                            f"-dir={self._storage_path} "
+                            f"-s3 -s3.config={self._config_path} "
+                            "-ip.bind=0.0.0.0 "
+                            "-master.electionTimeout 1s "
+                            "-master.volumeSizeLimitMB=1024 "
+                            "-volume.max=0"
                         ),
                         "startup": "enabled",
                         "environment": {
