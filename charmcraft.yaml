@@ -4,7 +4,6 @@
 # (Required)
 name: seaweedfs-k8s
 
-
 # (Required)
 type: charm
 assumes:
@@ -21,7 +20,6 @@ links:
 
 # (Required)
 summary: A stand-in for s3-integrator + (micro)ceph for testing purposes.
-
 
 # (Required)
 description: |
@@ -59,11 +57,9 @@ description: |
   2. This way we could relate multiple charms to the same seaweedfs charm, unlike s3-integrator where each
      app (mimir, loki, tempo) have their own s3-integrator due to different bucket names.
 
-
 # (Required for 'charm' type)
 platforms:
   ubuntu@24.04:amd64:
-
 
 parts:
   charm:
@@ -74,7 +70,6 @@ parts:
     override-build: |
       craftctl default
       git describe --always > $CRAFT_PART_INSTALL/version
-
 
 # (Optional) Configuration options for the charm
 # This config section defines charm config options, and populates the Configure
@@ -89,7 +84,6 @@ config:
       description: |
         This config option does nothing, because currently the bucket name
         is prescribed by the relation id.
-
 
 # The containers and resources metadata apply to Kubernetes charms only.
 # See https://juju.is/docs/sdk/metadata-reference for a checklist and guidance.
@@ -119,7 +113,7 @@ resources:
     # The upstream-source field is ignored by Juju. It is included here as a reference
     # so the integration testing suite knows which image to deploy during testing. This field
     # is also used by the 'canonical/charming-actions' Github action for automated releasing.
-    upstream-source: chrislusf/seaweedfs:3.88
+    upstream-source: chrislusf/seaweedfs:3.97
 
 provides:
   s3-credentials:
