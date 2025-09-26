@@ -51,6 +51,8 @@ class SeaweedfsK8S(ops.CharmBase):
         )
         container.replan()
 
+        self.unit.set_workload_version(self._seaweedfs_version or "")
+
         if self.unit.is_leader():
             for relation in self.model.relations.get("s3-credentials", []):
                 bucket_name = f"{relation.name}-{relation.id}"
@@ -123,6 +125,24 @@ class SeaweedfsK8S(ops.CharmBase):
         )
 
         return layer
+
+    @property
+    def _seaweedfs_version(self) -> Optional[str]:
+        """Returns the workload version."""
+        try:
+            container = self.unit.get_container(self.container_name)
+            version_output, _ = container.exec(
+                ["/usr/bin/weed", "version"], timeout=30
+            ).wait_output()
+        except APIError:
+            return None
+
+        # Output looks like this:
+        # version 30GB 3.97 76452ab59 linux amd64
+        result = re.search(r"version.*\s(\d+\.\d+\.?\d*)", version_output)
+        if result is None:
+            return result
+        return result.group(1)
 
 
 if __name__ == "__main__":  # pragma: nocover
