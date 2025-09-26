@@ -18,6 +18,11 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 
+def hook() -> str:
+    """Return Juju hook name."""
+    return os.environ["JUJU_HOOK_NAME"]
+
+
 class SeaweedfsK8S(ops.CharmBase):
     """Charm the application."""
 
@@ -34,10 +39,13 @@ class SeaweedfsK8S(ops.CharmBase):
         if not container.can_connect():
             return
 
+        if hook() in ["install", "remove", "stop"]:
+            return
+
         config = Config().build()
         config_hash = hashlib.sha512(config.encode()).hexdigest()
 
-        container.push(f"{self._config_path}", config)
+        container.push(f"{self._config_path}", config, make_dirs=True)
         container.add_layer(
             self.container_name, self._pebble_layer(config_hash), combine=True
         )
