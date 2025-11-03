@@ -142,3 +142,10 @@ curl -s http://$UNIT:8888/
 # S3 server
 curl -s http://$UNIT:8333/
 ```
+
+```bash
+sudo apt install s3cmd
+
+s3cmd --host=$UNIT:8333 --access_key=placeholder --secret_key=placeholder --host-bucket= --no-ssl ls
+s3cmd --host=$UNIT:8333 --access_key=placeholder --secret_key=placeholder --host-bucket= --no-ssl mb s3://loki
+```
