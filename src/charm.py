@@ -5,7 +5,7 @@
 """Charm the application."""
 
 import hashlib
-import http.client
+
 import logging
 import os
 import re
@@ -16,6 +16,7 @@ import ops
 from ops.pebble import APIError, Layer
 
 from config import Config
+from utils import create_bucket
 
 logger = logging.getLogger(__name__)
 
@@ -57,21 +58,15 @@ class SeaweedfsK8S(ops.CharmBase):
         self.unit.set_workload_version(self._seaweedfs_version or "")
 
         if self.unit.is_leader():
+            # Create bucket for config option
+            self.try_create_bucket(self.model.config["bucket"])
+
+            # Create bucket per relation
             for relation in self.model.relations.get("s3-credentials", []):
                 bucket_name = f"{relation.name}-{relation.id}"
 
-                try:
-                    conn = http.client.HTTPConnection("localhost:8333")
-                    conn.request("PUT", f"/{bucket_name}")
-                    response = conn.getresponse()
-                except ConnectionError as e:
-                    self.unit.status = ops.MaintenanceStatus(str(e))
+                if not self.try_create_bucket(bucket_name):
                     return
-
-                assert (
-                    200 <= response.status < 300 or  # success
-                    response.status == 409  # conflict: already exists
-                )
 
                 relation.data[self.app].update({
                     "endpoint": f"http://{socket.getfqdn()}:8333",
@@ -81,6 +76,23 @@ class SeaweedfsK8S(ops.CharmBase):
                 })
 
         self.unit.status = ops.ActiveStatus()
+
+    def try_create_bucket(self, bucket_name: str) -> bool:
+        """Create a bucket, returning True on success.
+
+        Returns False and sets unit status if the connection fails.
+        """
+        try:
+            response = create_bucket(bucket_name)
+        except ConnectionError as e:
+            self.unit.status = ops.MaintenanceStatus(str(e))
+            return False
+
+        assert (
+            200 <= response.status < 300 or  # success
+            response.status == 409  # conflict: already exists
+        )
+        return True
 
     def _pebble_layer(self, sentinel: str) -> Layer:
         """Construct the Pebble layer information.
