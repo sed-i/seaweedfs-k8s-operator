@@ -19,43 +19,16 @@ links:
   issues: https://github.com/sed-i/seaweedfs-k8s-operator/issues
 
 # (Required)
-summary: A stand-in for s3-integrator + (micro)ceph for testing purposes.
+summary: A drop-in S3-compatible object store, replacing ceph/radosgw and minio.
 
 # (Required)
 description: |
-  ## Purpose
-  This charm is intended to use as a stand-in for s3-integrator + (micro)ceph for testing purposes.
-  When testing charms, instead of deploying (micro)ceph, s3-integrator, setting config options and
-  running the sync-credentials action, this charm mimics the s3 relation interface and provides an
-  s3 endpoint.
-
-  ## Compared to s3-integrator
-  ### Relation data
-  This charm does not use the s3 library. Instead, it renderes the relation data itself.
-  For a related charm, relation data may look like this:
-
-  ```yaml
-    - relation-id: 7
-      endpoint: s3
-      related-endpoint: s3-credentials
-      application-data:
-        access-key: placeholder
-        bucket: s3-credentials-7
-        endpoint: http://swfs-0.swfs-endpoints.welcome-k8s.svc.cluster.local:8333
-        secret-key: placeholder
-  ```
-
-  Note that the bucket name is automatically derived from the relation id. No config options needed.
-
-  ### Bucket name
-  In the past there has been some confusion about who decides on the bucket name - the requesting charm
-  (e.g. mimir, loki, tempo), or the s3-integrator charm. It seems like everyone agrees now that it's the
-  s3-integrator where the bucket name should be set (via config option).
-
-  In this charm, the same principle holds, but there is no config option for bucket name, because:
-  1. For testing purposes, we don't care that the bucket name is not fixed.
-  2. This way we could relate multiple charms to the same seaweedfs charm, unlike s3-integrator where each
-     app (mimir, loki, tempo) have their own s3-integrator due to different bucket names.
+  A Juju sidecar charm that deploys SeaweedFS as a drop-in S3-compatible
+  object store. It replaces ceph/radosgw and minio in Juju-based
+  deployments. Designed for zero-config deployment: `juju deploy
+  seaweedfs-k8s` gives a working S3 endpoint. Supports horizontal scaling
+  via a peer mesh (every unit serves S3/volume/filer; up to 3 units run
+  Raft masters).
 
 # (Required for 'charm' type)
 platforms:
@@ -72,27 +45,25 @@ parts:
       git describe --always > $CRAFT_PART_INSTALL/version
 
 # (Optional) Configuration options for the charm
-# This config section defines charm config options, and populates the Configure
-# tab on Charmhub.
-# More information on this section at https://juju.is/docs/sdk/charmcraft-yaml#heading--config
-# General configuration documentation: https://juju.is/docs/sdk/config
 config:
   options:
-    bucket:
+    replication:
       type: string
-      default: "default-bucket"
+      default: ""
       description: |
-        This config option does nothing, because currently the bucket name
-        is prescribed by the relation id.
+        SeaweedFS default replication (xyz: x=copies in other DCs, y=other
+        racks, z=other servers in the same rack). Empty means auto: `000`
+        with 1 unit, `001` with 2 or more units. Any explicit value
+        overrides auto.
+    volume-size-limit-mb:
+      type: int
+      default: 1024
+      description: Max volume file size in MB.
 
 # The containers and resources metadata apply to Kubernetes charms only.
-# See https://juju.is/docs/sdk/metadata-reference for a checklist and guidance.
-
-# Your workload’s containers.
 containers:
   seaweedfs:
     resource: seaweedfs-image
-
     mounts:
       - storage: data
         location: /data
@@ -100,21 +71,54 @@ containers:
 storage:
   data:
     type: filesystem
-    description: >
-      Storage dir for seaweedfs data, such as s3.
+    description: Volume data storage for SeaweedFS (single PVC per unit).
+    minimum-size: 10G
 
-# This field populates the Resources tab on Charmhub.
 resources:
-  # An OCI image resource for each container listed above.
-  # You may remove this if your charm will run without a workload sidecar container.
   seaweedfs-image:
     type: oci-image
     description: OCI image for the 'seaweedfs' container
-    # The upstream-source field is ignored by Juju. It is included here as a reference
-    # so the integration testing suite knows which image to deploy during testing. This field
-    # is also used by the 'canonical/charming-actions' Github action for automated releasing.
-    upstream-source: chrislusf/seaweedfs:3.97
+    # The upstream-source field is ignored by Juju. It is included here as a
+    # reference so the integration testing suite knows which image to deploy
+    # during testing, and is used by canonical/charming-actions for releases.
+    # Pinned by digest; bumped with charm releases.
+    upstream-source: chrislusf/seaweedfs:3.97@sha256:bb05d66d2963b1cc48073190781c3dd29e2c4c88a2ae2986bf58e38c86d89c6e
+
+peers:
+  seaweedfs-peers:
+    interface: seaweedfs-peers
 
 provides:
   s3-credentials:
     interface: s3
+
+requires:
+  certificates:
+    interface: tls-certificates
+    limit: 1
+    optional: true
+  ingress:
+    interface: ingress
+    limit: 1
+    optional: true
+
+actions:
+  get-admin-credentials:
+    description: Retrieve the current admin S3 access/secret keys.
+  rotate-admin-credentials:
+    description: >
+      Generate new admin credentials and re-sync identities to the filer
+      (hot reload, no restart).
+  rotate-relation-credentials:
+    description: >
+      Regenerate credentials for one s3-credentials relation; updates the
+      secret, the relation data, and re-syncs identities.
+    params:
+      relation-id:
+        type: integer
+        description: The id of the s3-credentials relation to rotate.
+    required: [relation-id]
+  pre-upgrade-check:
+    description: >
+      Verify cluster health (Raft leader present, all masters up) before
+      `juju refresh`.
