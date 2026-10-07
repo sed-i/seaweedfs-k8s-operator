@@ -19,43 +19,28 @@ links:
   issues: https://github.com/sed-i/seaweedfs-k8s-operator/issues
 
 # (Required)
-summary: A stand-in for s3-integrator + (micro)ceph for testing purposes.
+summary: Scalable S3-compatible object storage powered by SeaweedFS.
 
 # (Required)
 description: |
   ## Purpose
-  This charm is intended to use as a stand-in for s3-integrator + (micro)ceph for testing purposes.
-  When testing charms, instead of deploying (micro)ceph, s3-integrator, setting config options and
-  running the sync-credentials action, this charm mimics the s3 relation interface and provides an
-  s3 endpoint.
+  This charm provides S3-compatible object storage backed by
+  [SeaweedFS](https://github.com/seaweedfs/seaweedfs). It can be used as a
+  lightweight `s3-integrator` replacement in tests, and as real object storage
+  for small deployments and home labs, standing in for MinIO or Ceph RADOS
+  Gateway.
 
-  ## Compared to s3-integrator
-  ### Relation data
-  This charm does not use the s3 library. Instead, it renderes the relation data itself.
-  For a related charm, relation data may look like this:
+  ## Scaling
+  The charm forms a single storage cluster from every unit in the application.
+  Adding a unit (`juju add-unit seaweedfs-k8s`) adds a volume server and an S3
+  gateway that join automatically; no manual peer or endpoint configuration is
+  required. The first unit runs the cluster master and filer.
 
-  ```yaml
-    - relation-id: 7
-      endpoint: s3
-      related-endpoint: s3-credentials
-      application-data:
-        access-key: placeholder
-        bucket: s3-credentials-7
-        endpoint: http://swfs-0.swfs-endpoints.welcome-k8s.svc.cluster.local:8333
-        secret-key: placeholder
-  ```
-
-  Note that the bucket name is automatically derived from the relation id. No config options needed.
-
-  ### Bucket name
-  In the past there has been some confusion about who decides on the bucket name - the requesting charm
-  (e.g. mimir, loki, tempo), or the s3-integrator charm. It seems like everyone agrees now that it's the
-  s3-integrator where the bucket name should be set (via config option).
-
-  In this charm, the same principle holds, but there is no config option for bucket name, because:
-  1. For testing purposes, we don't care that the bucket name is not fixed.
-  2. This way we could relate multiple charms to the same seaweedfs charm, unlike s3-integrator where each
-     app (mimir, loki, tempo) have their own s3-integrator due to different bucket names.
+  ## Credentials
+  S3 credentials are generated on first start and exposed through the
+  `s3-credentials` relation together with the bucket and endpoint. Bucket names
+  are derived from the relation id, so a single SeaweedFS application can serve
+  several consumers at once without extra configuration.
 
 # (Required for 'charm' type)
 platforms:
@@ -74,7 +59,7 @@ parts:
 # (Optional) Configuration options for the charm
 # This config section defines charm config options, and populates the Configure
 # tab on Charmhub.
-# More information on this section at https://juju.is/docs/sdk/charmcraft-yaml#heading--config
+# More information on this format at https://juju.is/docs/sdk/charmcraft-yaml#heading--config
 # General configuration documentation: https://juju.is/docs/sdk/config
 config:
   options:
@@ -82,13 +67,23 @@ config:
       type: string
       default: "default-bucket"
       description: |
-        This config option does nothing, because currently the bucket name
-        is prescribed by the relation id.
+        An additional bucket to create on startup. Consumers that relate to the
+        charm get their own bucket derived from the relation id, so this is only
+        needed if you want a bucket that is not tied to a relation.
+    replication:
+      type: string
+      default: "001"
+      description: |
+        SeaweedFS replication placement for data volumes, as an XYZ string:
+        X replicas in other data centers, Y in other racks, Z in other servers
+        in the same rack. The default ("001") keeps one extra copy on another
+        volume server in the same rack. A single-unit deployment always uses
+        "000", because there is nowhere to place a replica.
 
 # The containers and resources metadata apply to Kubernetes charms only.
 # See https://juju.is/docs/sdk/metadata-reference for a checklist and guidance.
 
-# Your workload’s containers.
+# Your workload's containers.
 containers:
   seaweedfs:
     resource: seaweedfs-image
@@ -114,6 +109,10 @@ resources:
     # so the integration testing suite knows which image to deploy during testing. This field
     # is also used by the 'canonical/charming-actions' Github action for automated releasing.
     upstream-source: chrislusf/seaweedfs:3.97
+
+peers:
+  cluster:
+    interface: seaweedfs-cluster
 
 provides:
   s3-credentials:
