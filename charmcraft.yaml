@@ -19,30 +19,52 @@ links:
   issues: https://github.com/sed-i/seaweedfs-k8s-operator/issues
 
 # (Required)
-summary: A stand-in for s3-integrator + (micro)ceph for testing purposes.
+summary: Scalable, self-clustering S3 storage built on SeaweedFS -- a drop-in
+  replacement for minio or ceph/radosgw.
 
 # (Required)
 description: |
-  ## Purpose
-  This charm is intended to use as a stand-in for s3-integrator + (micro)ceph for testing purposes.
-  When testing charms, instead of deploying (micro)ceph, s3-integrator, setting config options and
-  running the sync-credentials action, this charm mimics the s3 relation interface and provides an
-  s3 endpoint.
+  SeaweedFS-backed, S3-compatible object storage that is as easy to deploy for
+  CI/testing as it is to run as real home-lab storage.
+
+  ## Scale-out, zero-touch clustering
+  Deploy a single unit for a lightweight, disposable S3 endpoint, or
+  `juju add-unit` to grow a real, replicated storage cluster:
+
+  - Units discover each other automatically using their stable in-cluster
+    DNS names -- no peer configuration, load balancer, or extra charms
+    required.
+  - Up to 5 units form the SeaweedFS master/Raft quorum (an odd number, as
+    Raft requires); any further units join purely as storage/gateway nodes.
+  - Data is automatically replicated across units (up to 3 copies, mirroring
+    Ceph's own default) once enough units are present, and un-replicated on
+    a single unit to avoid wasting disk. Override with the `replication`
+    config option if you know what you're doing.
+  - Removing units (`juju remove-unit`) shrinks the cluster just as
+    smoothly.
+
+  ## Secure by default
+  Every credential is randomly generated per-deployment -- there is no
+  hard-coded or anonymous access. An administrative identity is created for
+  the charm's own use (and for human operators, via the
+  `get-admin-credentials` action); every related application instead
+  receives its own access/secret key pair, scoped to only the bucket it
+  owns.
 
   ## Compared to s3-integrator
   ### Relation data
-  This charm does not use the s3 library. Instead, it renderes the relation data itself.
-  For a related charm, relation data may look like this:
+  This charm does not use the s3 library. Instead, it renders the relation
+  data itself. For a related charm, relation data may look like this:
 
   ```yaml
     - relation-id: 7
       endpoint: s3
       related-endpoint: s3-credentials
       application-data:
-        access-key: placeholder
+        access-key: <randomly generated, unique to this relation>
         bucket: s3-credentials-7
         endpoint: http://swfs-0.swfs-endpoints.welcome-k8s.svc.cluster.local:8333
-        secret-key: placeholder
+        secret-key: <randomly generated, unique to this relation>
   ```
 
   Note that the bucket name is automatically derived from the relation id. No config options needed.
@@ -52,7 +74,8 @@ description: |
   (e.g. mimir, loki, tempo), or the s3-integrator charm. It seems like everyone agrees now that it's the
   s3-integrator where the bucket name should be set (via config option).
 
-  In this charm, the same principle holds, but there is no config option for bucket name, because:
+  In this charm, the same principle holds, but there is no config option for the per-relation bucket
+  name, because:
   1. For testing purposes, we don't care that the bucket name is not fixed.
   2. This way we could relate multiple charms to the same seaweedfs charm, unlike s3-integrator where each
      app (mimir, loki, tempo) have their own s3-integrator due to different bucket names.
@@ -82,8 +105,24 @@ config:
       type: string
       default: "default-bucket"
       description: |
-        This config option does nothing, because currently the bucket name
-        is prescribed by the relation id.
+        Name of a bucket to automatically create using the admin identity.
+        Set to an empty string to disable. This is independent of (and in
+        addition to) the per-relation buckets created for each
+        s3-credentials relation.
+    replication:
+      type: string
+      default: "auto"
+      description: |
+        SeaweedFS replica placement string (see upstream docs for the
+        "000".."002" format). Defaults to "auto", which picks no replication
+        for a single unit and increasingly replicates data (up to 3 copies,
+        mirroring Ceph's own default) as more units are added.
+    volume-size-limit-mb:
+      type: int
+      default: 1024
+      description: |
+        Maximum size (MB) of each underlying SeaweedFS volume (an internal
+        storage unit, not to be confused with the Juju storage volume).
 
 # The containers and resources metadata apply to Kubernetes charms only.
 # See https://juju.is/docs/sdk/metadata-reference for a checklist and guidance.
@@ -118,3 +157,15 @@ resources:
 provides:
   s3-credentials:
     interface: s3
+
+peers:
+  swfs-peers:
+    interface: swfs-peers
+
+actions:
+  get-admin-credentials:
+    description: |
+      Retrieve the auto-generated S3 administrator credentials and
+      endpoint(s), for manual/home-lab use (e.g. with s3cmd, rclone, or
+      restic) or to create additional buckets by hand.
+    params: {}
