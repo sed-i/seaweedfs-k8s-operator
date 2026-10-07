@@ -1,5 +1,5 @@
 [project]
-name = "alertmanager-k8s"
+name = "seaweedfs-k8s"
 version = "0.0"
 requires-python = "~=3.8"
 

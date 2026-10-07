@@ -1,151 +1,107 @@
-# seaweedfs-k8s-operator
+# SeaweedFS S3 Operator
+
 [![Charmhub Badge](https://charmhub.io/seaweedfs-k8s/badge.svg)](https://charmhub.io/seaweedfs-k8s)
 
+A lightweight, trivially scalable S3-compatible object store charm powered by
+[SeaweedFS](https://github.com/seaweedfs/seaweedfs). Drop-in replacement for
+MinIO or Ceph RADOS Gateway — suitable for both testing and home-lab production.
 
-## Purpose
-This charm is intended to be used as a stand-in for s3-integrator + (micro)ceph for testing purposes.
-When testing charms, instead of deploying (micro)ceph, s3-integrator, setting config options and
-running the sync-credentials action, this charm mimics the s3 relation interface and provides an
-s3 endpoint.
+## Features
 
-## Compared to s3-integrator
-### Relation data
-This charm does not use the s3 library. Instead, it renderes the relation data itself.
-For a related charm, relation data may look like this:
+- **S3-compatible API** — works with `s3cmd`, `awscli`, Mimir, Loki, Tempo, and anything that speaks S3
+- **Auto-scaling cluster** — `juju add-unit seaweedfs-k8s -n 2` joins new nodes automatically
+- **Auto-configured** — admin credentials are generated on first deploy, no manual setup
+- **Per-relation isolation** — each related application gets its own bucket with unique credentials
+- **Observability** — built-in Prometheus metrics endpoint and Grafana dashboard
+- **Lightweight** — single binary, minimal resource footprint
 
-```yaml
-  - relation-id: 7
-    endpoint: s3
-    related-endpoint: s3-credentials
-    application-data:
-      access-key: placeholder
-      bucket: s3-credentials-7
-      endpoint: http://swfs-0.swfs-endpoints.welcome-k8s.svc.cluster.local:8333
-      secret-key: placeholder
-```
-
-Note that the bucket name is automatically derived from the relation id. No config options needed.
-
-### Bucket name
-In the past there has been some confusion about who decides on the bucket name - the requesting charm
-(e.g. mimir, loki, tempo), or the s3-integrator charm. It seems like everyone agrees now that it's the
-s3-integrator where the bucket name should be set (via config option).
-
-In this charm, the same principle holds, but there is no config option for bucket name, because:
-1. For testing purposes, we don't care that the bucket name is not fixed.
-2. This way we could relate multiple charms to the same seaweedfs charm, unlike s3-integrator where each
-   app (mimir, loki, tempo) have their own s3-integrator due to different bucket names.
-
-## Usage example
-Here's a sample bundle
-
-```mermaid
-graph LR
-mc ---|s3:s3-credentials| swfs
-mw ---|mimir-cluster| mc
-tw ---|tempo-cluster| tc
-tc ---|s3:s3-credentials| swfs
-```
-
-```yaml
-bundle: kubernetes
-applications:
-  mc:
-    charm: mimir-coordinator-k8s
-    channel: 1/edge
-    revision: 43
-    base: ubuntu@22.04/stable
-    resources:
-      nginx-image: 14
-      nginx-prometheus-exporter-image: 4
-    scale: 1
-    constraints: arch=amd64
-  mw:
-    charm: mimir-worker-k8s
-    channel: 1/edge
-    revision: 50
-    base: ubuntu@22.04/stable
-    resources:
-      mimir-image: 16
-    scale: 1
-    options:
-      role-all: true
-    constraints: arch=amd64
-    trust: true
-  swfs:
-    charm: seaweedfs-k8s
-    channel: edge
-    revision: 5
-    base: ubuntu@24.04/stable
-    scale: 1
-    constraints: arch=amd64
-  tc:
-    charm: tempo-coordinator-k8s
-    channel: 1/edge
-    revision: 79
-    base: ubuntu@22.04/stable
-    resources:
-      nginx-image: 7
-      nginx-prometheus-exporter-image: 4
-    scale: 1
-    constraints: arch=amd64
-    trust: true
-  tw:
-    charm: tempo-worker-k8s
-    channel: 1/edge
-    revision: 59
-    base: ubuntu@22.04/stable
-    resources:
-      tempo-image: 6
-    scale: 1
-    options:
-      role-all: true
-    constraints: arch=amd64
-    trust: true
-relations:
-- - mc:s3
-  - swfs:s3-credentials
-- - mw:mimir-cluster
-  - mc:mimir-cluster
-- - tw:tempo-cluster
-  - tc:tempo-cluster
-- - tc:s3
-  - swfs:s3-credentials
-```
-
-## Manual testing
-```bash
-juju ssh --container seaweedfs swfs/0 /charm/bin/pebble logs -f | grep -iE "error|fail"
-
-# Make sure size is growing
-juju ssh --container seaweedfs swfs/0 du -hc /data
-```
+## Quick Start
 
 ```bash
-# Refs:
-# https://github.com/seaweedfs/seaweedfs/blob/master/docker/compose/local-filer-backup-compose.yml
-# https://github.com/seaweedfs/seaweedfs/blob/master/.github/workflows/s3tests.yml
+juju deploy seaweedfs-k8s
 
-UNIT=$(juju status --format=yaml | yq '.applications.swfs.units.swfs/0.address')
+# Connect an S3-consuming application
+juju relate seaweedfs-k8s:s3-credentials your-app:s3
 
-curl --fail -I http://$UNIT:9333/cluster/healthz
+# Scale to three nodes
+juju add-unit seaweedfs-k8s -n 2
 
-# Master server
-curl -s http://$UNIT:9333/cluster/status
-
-# Volume server
-curl -s http://$UNIT:8080/status
-
-# Filer
-curl -s http://$UNIT:8888/
-
-# S3 server
-curl -s http://$UNIT:8333/
+# Get admin credentials for direct S3 access
+juju run seaweedfs-k8s/leader get-admin-credentials
 ```
 
-```bash
-sudo apt install s3cmd
+## Configuration
 
-s3cmd --host=$UNIT:8333 --access_key=placeholder --secret_key=placeholder --host-bucket= --no-ssl ls
-s3cmd --host=$UNIT:8333 --access_key=placeholder --secret_key=placeholder --host-bucket= --no-ssl mb s3://loki
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `volume-size-limit-mb` | int | 1024 | Maximum volume size in MB |
+| `replication` | string | `001` | Replication strategy (e.g. `000`, `001`, `010`) |
+| `filer-max-mb` | int | 64 | Maximum filer metadata store size in MB |
+| `metrics` | bool | true | Enable Prometheus metrics on port 9321 |
+| `admin-access-key` | string | (auto) | Custom admin S3 access key |
+| `admin-secret-key` | string | (auto) | Custom admin S3 secret key |
+
+## Observability
+
+```bash
+juju relate seaweedfs-k8s:metrics-endpoint prometheus:metrics-endpoint
+juju relate seaweedfs-k8s:grafana-dashboard grafana:grafana-dashboard
+```
+
+## Manual S3 Access
+
+```bash
+# Get credentials
+CREDS=$(juju run seaweedfs-k8s/leader get-admin-credentials --format=json | jq -r '.[]')
+ACCESS_KEY=$(echo "$CREDS" | jq -r '."access-key"')
+SECRET_KEY=$(echo "$CREDS" | jq -r '."secret-key"')
+
+# Use with s3cmd
+s3cmd --host=<unit-ip>:8333 \
+      --access_key=$ACCESS_KEY \
+      --secret_key=$SECRET_KEY \
+      --no-ssl ls
+```
+
+## Relation Data
+
+For a related charm, the S3 relation data includes:
+
+| Key | Value |
+|---|---|
+| `access-key` | Auto-generated access key scoped to the bucket |
+| `secret-key` | Auto-generated secret key |
+| `bucket` | Bucket named `s3-credentials-{relation-id}` |
+| `endpoint` | `http://seaweedfs-k8s.<model>.svc.cluster.local:8333` |
+
+Each S3 relation gets unique credentials and a dedicated bucket.
+
+## Architecture
+
+Each unit runs a `weed server` process combining Master, Volume, Filer, and S3
+services. Units discover each other via a peer relation and form a Raft consensus
+cluster automatically.
+
+```
+┌─────────────────────────────────────────┐
+│              seaweedfs-k8s              │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐ │
+│  │  Unit 0  │  │  Unit 1  │  │  Unit 2  │ │
+│  │ master   │◄─┤ master   │◄─┤ master   │ │
+│  │ volume   │  │ volume   │  │ volume   │ │
+│  │ filer    │  │ filer    │  │ filer    │ │
+│  │ s3 :8333 │  │ s3 :8333 │  │ s3 :8333 │ │
+│  └─────────┘  └─────────┘  └─────────┘ │
+│       ▲            ▲            ▲       │
+│       └────────────┼────────────┘       │
+│             K8s Service                 │
+└─────────────────────────────────────────┘
+```
+
+## Development
+
+```bash
+tox              # lint, type-check, unit tests
+tox run -e fmt   # auto-format
+charmcraft pack  # build the charm
 ```
