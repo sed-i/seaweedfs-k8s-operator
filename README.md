@@ -3,38 +3,55 @@
 
 
 ## Purpose
-This charm is intended to be used as a stand-in for s3-integrator + (micro)ceph for testing purposes.
-When testing charms, instead of deploying (micro)ceph, s3-integrator, setting config options and
-running the sync-credentials action, this charm mimics the s3 relation interface and provides an
-s3 endpoint.
+This charm provides S3-compatible object storage backed by
+[SeaweedFS](https://github.com/seaweedfs/seaweedfs). It can be used as a
+stand-in for `s3-integrator` in tests, and as real object storage for small
+deployments and home labs, replacing MinIO or Ceph RADOS Gateway behind the
+same `s3` relation interface.
+
+## Scaling
+Every unit joins one storage cluster automatically. The first unit runs the
+cluster master and filer; all units run a volume server and an S3 gateway:
+
+```bash
+juju deploy seaweedfs-k8s --channel edge
+juju add-unit seaweedfs-k8s            # adds storage capacity and a S3 gateway
+```
+
+No peer or endpoint configuration is needed. Data volumes are replicated
+according to the `replication` config option (see below).
+
+## Credentials
+S3 credentials are generated on first start and stored in application data.
+Consumers receive the endpoint, `access-key`, `secret-key`, and a bucket name
+through the `s3-credentials` relation. Each relation gets its own bucket, so a
+single SeaweedFS application can serve several consumers at once.
 
 ## Compared to s3-integrator
 ### Relation data
-This charm does not use the s3 library. Instead, it renderes the relation data itself.
-For a related charm, relation data may look like this:
+This charm does not use the s3 library. Instead, it renders the relation data
+itself. For a related charm, relation data looks like this:
 
 ```yaml
   - relation-id: 7
     endpoint: s3
     related-endpoint: s3-credentials
     application-data:
-      access-key: placeholder
+      access-key: 5f2c9a1e4b7d8c0a3e6f
       bucket: s3-credentials-7
       endpoint: http://swfs-0.swfs-endpoints.welcome-k8s.svc.cluster.local:8333
-      secret-key: placeholder
+      secret-key: 9d1f...redacted...
 ```
 
-Note that the bucket name is automatically derived from the relation id. No config options needed.
+Note that the bucket name is automatically derived from the relation id. No
+config options are needed.
 
-### Bucket name
-In the past there has been some confusion about who decides on the bucket name - the requesting charm
-(e.g. mimir, loki, tempo), or the s3-integrator charm. It seems like everyone agrees now that it's the
-s3-integrator where the bucket name should be set (via config option).
-
-In this charm, the same principle holds, but there is no config option for bucket name, because:
-1. For testing purposes, we don't care that the bucket name is not fixed.
-2. This way we could relate multiple charms to the same seaweedfs charm, unlike s3-integrator where each
-   app (mimir, loki, tempo) have their own s3-integrator due to different bucket names.
+## Configuration
+- `bucket` — an extra bucket to create on startup, in addition to the
+  per-relation buckets.
+- `replication` — SeaweedFS replication placement for data volumes, as an XYZ
+  string (default `001`: one extra copy on another volume server in the same
+  rack). A single-unit deployment always uses `000`.
 
 ## Usage example
 Here's a sample bundle
@@ -146,6 +163,10 @@ curl -s http://$UNIT:8333/
 ```bash
 sudo apt install s3cmd
 
-s3cmd --host=$UNIT:8333 --access_key=placeholder --secret_key=placeholder --host-bucket= --no-ssl ls
-s3cmd --host=$UNIT:8333 --access_key=placeholder --secret_key=placeholder --host-bucket= --no-ssl mb s3://loki
+# Read the generated credentials from the relation.
+ACCESS_KEY=$(juju show-unit swfs/0 --format=json | yq '."swfs/0"."relation-info"[] | select(.endpoint=="s3-credentials")."application-data"."access-key"')
+SECRET_KEY=$(juju show-unit swfs/0 --format=json | yq '."swfs/0"."relation-info"[] | select(.endpoint=="s3-credentials")."application-data"."secret-key"')
+
+s3cmd --host=$UNIT:8333 --access_key=$ACCESS_KEY --secret_key=$SECRET_KEY --host-bucket= --no-ssl ls
+s3cmd --host=$UNIT:8333 --access_key=$ACCESS_KEY --secret_key=$SECRET_KEY --host-bucket= --no-ssl mb s3://loki
 ```

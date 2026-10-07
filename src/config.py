@@ -1,56 +1,32 @@
-"""Config builder for seaweedfs."""
+"""S3 configuration builder for SeaweedFS."""
 
-import textwrap
+import json
+from typing import Dict, Iterable, List
+
+# Permissions granted to every client the charm hands out. Bucket creation is an
+# administrative operation in the SeaweedFS S3 API, so "Admin" is required for
+# the charm's own bucket provisioning to succeed with the same credentials.
+CLIENT_ACTIONS = ["Admin", "Read", "List", "Tagging", "Write"]
 
 
-class Config:
-    """Config builder for seaweedfs.
+def build_s3_config(credentials: Iterable[Dict[str, str]]) -> str:
+    """Render the SeaweedFS ``s3.json`` from a set of client credentials.
 
-    Ref: https://github.com/seaweedfs/seaweedfs/blob/master/docker/compose/s3.json
+    Each credential mapping must provide ``name``, ``access-key`` and
+    ``secret-key``.
     """
-
-    def build(self) -> str:
-        """Create a json string of the config."""
-        return textwrap.dedent("""
+    identities: List[Dict[str, object]] = []
+    for credential in credentials:
+        identities.append(
             {
-              "identities": [
-                {
-                  "name": "admin",
-                  "credentials": [
+                "name": credential["name"],
+                "credentials": [
                     {
-                      "accessKey": "admin",
-                      "secretKey": "admin"
+                        "accessKey": credential["access-key"],
+                        "secretKey": credential["secret-key"],
                     }
-                  ],
-                  "actions": ["*"],
-                  "allowed_buckets": ["*"]
-                },
-                {
-                  "name": "anonymous",
-                  "actions": [
-                    "Admin",
-                    "Read",
-                    "List",
-                    "Tagging",
-                    "Write"
-                  ]
-                },
-                {
-                  "name": "placeholder",
-                  "credentials": [
-                    {
-                      "accessKey": "placeholder",
-                      "secretKey": "placeholder"
-                    }
-                  ],
-                  "actions": [
-                    "Admin",
-                    "Read",
-                    "List",
-                    "Tagging",
-                    "Write"
-                  ]
-                }
-              ]
+                ],
+                "actions": list(CLIENT_ACTIONS),
             }
-        """)
+        )
+    return json.dumps({"identities": identities}, indent=2)
